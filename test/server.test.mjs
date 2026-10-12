@@ -1,0 +1,14 @@
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { server } from '../server.mjs';
+process.env.DASHBOARD_USER = 'test-admin';
+process.env.DASHBOARD_PASSWORD = 'test-only-password';
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const base = `http://127.0.0.1:${server.address().port}`;
+after(()=>server.close());
+test('landing public fără date private',async()=>{const r=await fetch(base);assert.equal(r.status,200);const t=await r.text();assert.ok(t.includes('Agentul tău AI'));assert.ok(!t.includes('Atelier Exemplu'));});
+test('dashboard și script protejate',async()=>{for(const path of ['/dashboard','/app.js']){const r=await fetch(base+path);assert.equal(r.status,401);}});
+test('credențiale greșite refuzate',async()=>{assert.equal((await fetch(base+'/dashboard',{headers:{Authorization:'Basic '+Buffer.from('test-admin:wrong').toString('base64')}})).status,401);});
+test('dashboard autorizat și antete de securitate',async()=>{const r=await fetch(base+'/dashboard',{headers:{Authorization:'Basic '+Buffer.from('test-admin:test-only-password').toString('base64')}});assert.equal(r.status,200);assert.ok((await r.text()).includes('SPAȚIU PRIVAT'));assert.ok(r.headers.get('content-security-policy').includes("frame-ancestors 'none'"));});
+test('fără credențiale accesul este închis',async()=>{delete process.env.DASHBOARD_PASSWORD;assert.equal((await fetch(base+'/dashboard')).status,503);process.env.DASHBOARD_PASSWORD='test-only-password';});
+test('rute necunoscute și metode de scriere refuzate',async()=>{assert.equal((await fetch(base+'/server.mjs')).status,404);assert.equal((await fetch(base+'/dashboard',{method:'POST'})).status,405);});
